@@ -1,11 +1,16 @@
-# Context-Aware-Hybrid-Movie-Recommendation-System
-A context-aware hybrid movie recommendation system using collaborative filtering and machine learning.
+# Context-Aware Hybrid Movie Recommendation System
+
+A machine learning-based movie recommendation system that combines collaborative filtering and supervised learning to deliver personalized recommendations.
+
+---
 
 ## Features
-- Hybrid model (SVD + XGBoost)
-- Personalized recommendations
-- Real-time Streamlit app
-- Poster integration using TMDB API
+- Hybrid recommendation model (SVD + XGBoost)
+- Personalized top-N movie recommendations
+- Real-time predictions using Streamlit
+- Movie poster integration using TMDB API
+
+---
 
 ## Tech Stack
 - Python
@@ -14,9 +19,22 @@ A context-aware hybrid movie recommendation system using collaborative filtering
 - Surprise (SVD)
 - Streamlit
 
+---
+
 ## Dataset
 - MovieLens 100K dataset
-- 100,000+ user-movie interactions
+- 100,000+ user–movie interactions
+- 900+ movies
+
+---
+
+## How It Works
+1. SVD predicts user–movie ratings
+2. Features are engineered (genre, ratings, etc.)
+3. XGBoost refines predictions
+4. Top-N recommendations are generated
+
+---
 
 ## Run Locally
 
