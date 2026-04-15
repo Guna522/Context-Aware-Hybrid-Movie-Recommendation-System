@@ -28,6 +28,9 @@ with open(os.path.join(BASE_DIR, 'models', 'hybrid_model.pkl'), 'rb') as f:
 with open(os.path.join(BASE_DIR, 'models', 'features.pkl'), 'rb') as f:
     features = pickle.load(f)
 
+# ---------------- OPTIMIZATION (NEW) ----------------
+movie_titles = movies.set_index('movieId')['title'].to_dict()
+
 # ---------------- TMDB MAP ----------------
 movie_tmdb_map = links.set_index('movieId')['tmdbId'].to_dict()
 
@@ -40,11 +43,11 @@ def get_poster(movie_id):
             return "https://i.imgur.com/6M513jN.png"
 
         url = f"https://api.themoviedb.org/3/movie/{int(tmdb_id)}?api_key={API_KEY}"
-        res = requests.get(url).json()
+        res = requests.get(url, timeout=5).json()  # updated
 
         if res.get("poster_path"):
             return f"https://image.tmdb.org/t/p/w500{res['poster_path']}"
-    except:
+    except Exception:
         pass
 
     return "https://i.imgur.com/6M513jN.png"
@@ -103,11 +106,11 @@ for i in range(0, min(len(user_history_ids), 10), num_cols):
     cols = st.columns(num_cols, gap="medium")
 
     for col, movie_id in zip(cols, user_history_ids[i:i+num_cols]):
-        title = movies[movies['movieId'] == movie_id]['title'].values[0]
+        title = movie_titles.get(movie_id, "Unknown")  # updated
         poster = get_poster(movie_id)
 
         with col:
-            st.image(poster, width='stretch')
+            st.image(poster, use_container_width=True)  # updated
             st.caption(title[:40])
 
 # ---------------- MODEL ----------------
@@ -121,7 +124,7 @@ def hybrid_recommend(user_id):
     candidate_movies = candidate_df['movieId'].unique()
 
     movie_lookup = df.drop_duplicates('movieId').set_index('movieId')
-    watched = set(df[df['userId'] == user_id]['movieId'])
+    watched = set(user_history_ids)  # updated
 
     preds = []
 
@@ -138,17 +141,14 @@ def hybrid_recommend(user_id):
 
             input_data = pd.DataFrame([row])
 
-            for col in features:
-                if col not in input_data.columns:
-                    input_data[col] = 0
-
-            input_data = input_data[features]
+            # updated (cleaner & faster)
+            input_data = input_data.reindex(columns=features, fill_value=0)
 
             pred = hybrid_model.predict(input_data)[0]
 
             preds.append((movie_id, pred))
 
-        except:
+        except Exception:
             continue
 
     preds.sort(key=lambda x: x[1], reverse=True)
@@ -172,11 +172,11 @@ if st.button("Get Recommendations"):
             cols = st.columns(num_cols, gap="medium")
 
             for col, (movie_id, score) in zip(cols, recs[i:i+num_cols]):
-                title = movies[movies['movieId'] == movie_id]['title'].values[0]
+                title = movie_titles.get(movie_id, "Unknown")  # updated
                 poster = get_poster(movie_id)
 
                 with col:
-                    st.image(poster, width='stretch')
+                    st.image(poster, use_container_width=True)  # updated
                     st.caption(title[:40])
                     st.caption(f"{score:.1f}")
 
@@ -185,8 +185,9 @@ if st.button("Get Recommendations"):
         st.markdown(" ")
 
         if len(user_history_ids) > 0:
-            sample_movies = movies[
-                movies['movieId'].isin(user_history_ids[:3])
-            ]['title'].tolist()
+            sample_movies = [
+                movie_titles.get(mid, "")
+                for mid in user_history_ids[:3]
+            ]
 
             st.caption(", ".join(sample_movies))
