@@ -10,7 +10,7 @@ st.title("Movie Recommender")
 
 st.markdown(" ")
 
-API_KEY = "API_KEY_HERE"  # Replace with your TMDB API key
+API_KEY = os.getenv("TMDB_API_KEY")
 
 # ---------------- LOAD ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
