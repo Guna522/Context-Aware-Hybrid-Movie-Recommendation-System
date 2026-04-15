@@ -6,11 +6,22 @@ import requests
 
 # ---------------- CONFIG ----------------
 st.set_page_config(layout="wide")
+st.markdown("""
+<style>
+html, body {
+    overflow-x: hidden;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.title("Movie Recommender")
 
 st.markdown(" ")
 
 API_KEY = os.getenv("TMDB_API_KEY")  # Replace with your TMDB API key
+if not API_KEY:
+    st.error("API key missing")
+    st.stop()
 
 # ---------------- LOAD ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -107,18 +118,20 @@ for i in range(0, min(len(user_history_ids), 10), num_cols):
         poster = get_poster(movie_id)
 
         with col:
-            st.image(poster, width='stretch')
+            st.image(poster, width=180)
             st.caption(title[:40])
 
 # ---------------- MODEL ----------------
-def hybrid_recommend(user_id):
+@st.cache_data(show_spinner=False)
+def hybrid_recommend(user_id, min_rating, min_popularity, num_recs):
 
     candidate_df = df[
         (df['avg_rating'] >= min_rating) &
         (df['num_ratings'] >= min_popularity)
     ]
 
-    candidate_movies = candidate_df['movieId'].unique()
+    candidate_movies = candidate_df.sort_values(by=['avg_rating', 'num_ratings'],
+    ascending=False)['movieId'].unique()[:300]
 
     movie_lookup = df.drop_duplicates('movieId').set_index('movieId')
     watched = set(df[df['userId'] == user_id]['movieId'])
@@ -145,6 +158,7 @@ def hybrid_recommend(user_id):
             input_data = input_data[features]
 
             pred = hybrid_model.predict(input_data)[0]
+            pred = max(0, min(5, pred))
 
             preds.append((movie_id, pred))
 
@@ -158,7 +172,7 @@ def hybrid_recommend(user_id):
 if st.button("Get Recommendations"):
 
     with st.spinner("Finding recommendations..."):
-        recs = hybrid_recommend(user_id)
+        recs = hybrid_recommend(user_id, min_rating, min_popularity, num_recs)
 
     if not recs:
         st.error("No recommendations found.")
@@ -176,9 +190,9 @@ if st.button("Get Recommendations"):
                 poster = get_poster(movie_id)
 
                 with col:
-                    st.image(poster, width='stretch')
+                    st.image(poster, width=180)
                     st.caption(title[:40])
-                    st.caption(f"{score:.1f}")
+                    st.caption(f"⭐ {score:.1f} / 5.0")
 
         # ---------------- EXPLANATION ----------------
         st.subheader("Why these recommendations")
