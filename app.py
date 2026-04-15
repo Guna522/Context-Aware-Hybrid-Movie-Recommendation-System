@@ -1,193 +1,110 @@
 import streamlit as st
 import pandas as pd
-import pickle
+import numpy as np
 import os
 import requests
 
 # ---------------- CONFIG ----------------
-st.set_page_config(layout="wide")
-st.title("Movie Recommender")
+st.set_page_config(page_title="Movie Recommender", layout="wide")
 
-st.markdown(" ")
-
-API_KEY = os.getenv("TMDB_API_KEY")
-
-# ---------------- LOAD ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-df = pd.read_csv(os.path.join(BASE_DIR, 'data', 'final_df.csv'), low_memory=False)
-movies = pd.read_csv(os.path.join(BASE_DIR, 'data', 'movies.csv'), low_memory=False)
-links = pd.read_csv(os.path.join(BASE_DIR, 'data', 'links.csv'))
-
-with open(os.path.join(BASE_DIR, 'models', 'svd_model.pkl'), 'rb') as f:
-    svd_model = pickle.load(f)
-
-with open(os.path.join(BASE_DIR, 'models', 'hybrid_model.pkl'), 'rb') as f:
-    hybrid_model = pickle.load(f)
-
-with open(os.path.join(BASE_DIR, 'models', 'features.pkl'), 'rb') as f:
-    features = pickle.load(f)
-
-# ---------------- OPTIMIZATION (NEW) ----------------
-movie_titles = movies.set_index('movieId')['title'].to_dict()
-
-# ---------------- TMDB MAP ----------------
-movie_tmdb_map = links.set_index('movieId')['tmdbId'].to_dict()
-
+# ---------------- LOAD DATA (ROBUST) ----------------
 @st.cache_data
-def get_poster(movie_id):
+def load_data():
+    github_url = "https://raw.githubusercontent.com/Guna522/Context-Aware-Hybrid-Movie-Recommendation-System/main/data/final_df.csv"
+    local_path = os.path.join(BASE_DIR, "data", "final_df.csv")
+
     try:
-        tmdb_id = movie_tmdb_map.get(movie_id)
+        df = pd.read_csv(github_url)
+        return df
+    except:
+        if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+            return pd.read_csv(local_path)
+        else:
+            st.error("Dataset not found or empty. Please check GitHub or local file.")
+            st.stop()
 
-        if pd.isna(tmdb_id):
-            return "https://i.imgur.com/6M513jN.png"
+df = load_data()
 
-        url = f"https://api.themoviedb.org/3/movie/{int(tmdb_id)}?api_key={API_KEY}"
-        res = requests.get(url, timeout=5).json()  # updated
+# ---------------- CLEAN DATA ----------------
+df['rating'] = pd.to_numeric(df['rating'], errors='coerce')
+df['num_ratings'] = pd.to_numeric(df['num_ratings'], errors='coerce')
 
-        if res.get("poster_path"):
-            return f"https://image.tmdb.org/t/p/w500{res['poster_path']}"
-    except Exception:
-        pass
+df = df.dropna(subset=['title', 'rating'])
 
-    return "https://i.imgur.com/6M513jN.png"
-
-# ---------------- USER NAMES ----------------
+# ---------------- USER SYSTEM ----------------
 unique_users = sorted(df['userId'].unique())
 
-names = [
-    "Aarav", "Vivaan", "Aditya", "Vihaan", "Arjun",
-    "Sai", "Reyansh", "Krishna", "Ishaan", "Shaurya",
-    "Ananya", "Diya", "Aadhya", "Kiara", "Ira",
-    "Saanvi", "Riya", "Priya", "Meera", "Anika"
-]
+user_names = {uid: f"User {uid}" for uid in unique_users}
 
-user_names = {
-    uid: names[i % len(names)] + f" ({uid})"
-    for i, uid in enumerate(unique_users)
-}
+# ---------------- SELECT USER ----------------
+st.markdown("### Select User")
+selected_name = st.selectbox(
+    "Choose a user",
+    list(user_names.values()),
+    label_visibility="collapsed"
+)
 
-# ---------------- HEADER ----------------
-col1, col2 = st.columns([3, 2])
+user_id = [k for k, v in user_names.items() if v == selected_name][0]
 
-with col1:
-    st.subheader("User")
+st.markdown(f"#### Welcome, {selected_name}")
 
-    selected_user = st.selectbox(
-        "Select User",
-        list(user_names.values()),
-        label_visibility="collapsed"
-    )
+# ---------------- POSTER FUNCTION ----------------
+def get_poster(title):
+    try:
+        api_key = "YOUR_TMDB_API_KEY"  # Replace if needed
+        url = f"https://api.themoviedb.org/3/search/movie?api_key={api_key}&query={title}"
+        response = requests.get(url).json()
 
-    user_id = [uid for uid, name in user_names.items() if name == selected_user][0]
-    user_name = selected_user.split(" (")[0]
+        if response['results']:
+            poster_path = response['results'][0]['poster_path']
+            if poster_path:
+                return f"https://image.tmdb.org/t/p/w500{poster_path}"
+    except:
+        pass
 
-with col2:
-    st.write("")
-    st.caption(f"Signed in as {user_name}")
+    return "https://via.placeholder.com/300x450?text=No+Image"
 
-st.markdown(" ")
-st.divider()
+# ---------------- WATCH HISTORY ----------------
+st.markdown("## Previously Watched")
 
-# ---------------- FILTERS ----------------
-st.sidebar.header("Filters")
-min_rating = st.sidebar.slider("Minimum Rating", 0.0, 5.0, 3.0)
-min_popularity = st.sidebar.slider("Minimum Popularity", 0, 200, 20)
-num_recs = st.sidebar.slider("Number of Recommendations", 5, 20, 10)
+user_history = df[df['userId'] == user_id].sort_values(by='rating', ascending=False).head(10)
 
-# ---------------- HISTORY ----------------
-st.subheader("Previously Watched")
-st.markdown(" ")
+cols = st.columns(5)
 
-user_history_ids = df[df['userId'] == user_id]['movieId'].unique()
+for i, (_, row) in enumerate(user_history.iterrows()):
+    with cols[i % 5]:
+        poster = get_poster(row['title'])
+        st.image(poster, width='stretch')
+        st.caption(row['title'])
 
-num_cols = 5
-for i in range(0, min(len(user_history_ids), 10), num_cols):
-    cols = st.columns(num_cols, gap="medium")
+# ---------------- RECOMMENDATION FUNCTION ----------------
+def recommend_movies(df, user_id, n=10):
+    user_movies = df[df['userId'] == user_id]['title'].unique()
 
-    for col, movie_id in zip(cols, user_history_ids[i:i+num_cols]):
-        title = movie_titles.get(movie_id, "Unknown")  # updated
-        poster = get_poster(movie_id)
+    recs = df[~df['title'].isin(user_movies)]
 
-        with col:
-            st.image(poster, use_container_width=True)  # updated
-            st.caption(title[:40])
+    recs = recs.sort_values(by=['rating', 'num_ratings'], ascending=False)
 
-# ---------------- MODEL ----------------
-def hybrid_recommend(user_id):
-
-    candidate_df = df[
-        (df['avg_rating'] >= min_rating) &
-        (df['num_ratings'] >= min_popularity)
-    ]
-
-    candidate_movies = candidate_df['movieId'].unique()
-
-    movie_lookup = df.drop_duplicates('movieId').set_index('movieId')
-    watched = set(user_history_ids)  # updated
-
-    preds = []
-
-    for movie_id in candidate_movies:
-
-        if movie_id in watched:
-            continue
-
-        try:
-            svd_pred = svd_model.predict(user_id, movie_id).est
-
-            row = movie_lookup.loc[movie_id].copy()
-            row['svd_pred'] = svd_pred
-
-            input_data = pd.DataFrame([row])
-
-            # updated (cleaner & faster)
-            input_data = input_data.reindex(columns=features, fill_value=0)
-
-            pred = hybrid_model.predict(input_data)[0]
-
-            preds.append((movie_id, pred))
-
-        except Exception:
-            continue
-
-    preds.sort(key=lambda x: x[1], reverse=True)
-    return preds[:num_recs]
+    return recs.drop_duplicates('title').head(n)
 
 # ---------------- BUTTON ----------------
 if st.button("Get Recommendations"):
+    st.success("Recommendations ready!")
 
-    with st.spinner("Finding recommendations..."):
-        recs = hybrid_recommend(user_id)
+    recommendations = recommend_movies(df, user_id)
 
-    if not recs:
-        st.error("No recommendations found.")
-    else:
-        st.subheader("Recommended For You")
-        st.markdown(" ")
+    st.markdown("## Top Picks For You")
 
-        num_cols = 5
+    cols = st.columns(5)
 
-        for i in range(0, len(recs), num_cols):
-            cols = st.columns(num_cols, gap="medium")
+    for i, (_, row) in enumerate(recommendations.iterrows()):
+        with cols[i % 5]:
+            poster = get_poster(row['title'])
+            st.image(poster, width='stretch')
 
-            for col, (movie_id, score) in zip(cols, recs[i:i+num_cols]):
-                title = movie_titles.get(movie_id, "Unknown")  # updated
-                poster = get_poster(movie_id)
+            st.markdown(f"**{row['title']}**")
+            st.write(f"⭐ {round(row['rating'], 1)}")
 
-                with col:
-                    st.image(poster, use_container_width=True)  # updated
-                    st.caption(title[:40])
-                    st.caption(f"{score:.1f}")
-
-        # ---------------- EXPLANATION ----------------
-        st.subheader("Why these recommendations")
-        st.markdown(" ")
-
-        if len(user_history_ids) > 0:
-            sample_movies = [
-                movie_titles.get(mid, "")
-                for mid in user_history_ids[:3]
-            ]
-
-            st.caption(", ".join(sample_movies))
+            st.caption("Highly rated")
